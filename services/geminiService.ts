@@ -1,95 +1,60 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { LevelPattern, AIEvent } from "../types";
+import { AIEvent } from "../types";
 
 /**
  * Service for interacting with Google Gemini AI.
- * Handles dynamic level generation and narrative game events.
+ * Uses Google Search grounding to make the AI Narrator react to real-world context.
  */
 
-const SYSTEM_INSTRUCTION = "You are the system architect for 'HyperRun: Nexus', a high-performance cyberpunk runner. Respond only in valid JSON.";
-
-export const generateDynamicLevel = async (difficulty: number): Promise<LevelPattern> => {
-  try {
-    // Create a new GoogleGenAI instance right before making an API call to ensure it uses the up-to-date API key.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Generate a JSON pattern for an endless runner level. Difficulty: ${difficulty}/10. 
-      The level should have a name and a sequence of 10 obstacles. 
-      Lanes are 0 (left), 1 (center), 2 (right). 
-      Types: BARRIER, TRAIN, RAMP, POWERUP.`,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            difficulty: { type: Type.NUMBER },
-            obstacles: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  lane: { type: Type.NUMBER },
-                  type: { type: Type.STRING },
-                  gap: { type: Type.NUMBER }
-                }
-              }
-            }
-          },
-          required: ["name", "difficulty", "obstacles"]
-        }
-      }
-    });
-
-    // Use response.text getter directly.
-    const jsonStr = response.text?.trim();
-    if (!jsonStr) throw new Error("Empty response from AI");
-    return JSON.parse(jsonStr) as LevelPattern;
-  } catch (error) {
-    console.error("Gemini Level Gen Failed:", error);
-    return {
-      name: "Neo-City Circuit (Fallback)",
-      difficulty: 1,
-      obstacles: Array.from({ length: 10 }, (_, i) => ({
-        lane: i % 3,
-        type: i % 5 === 0 ? "TRAIN" : "BARRIER",
-        gap: 300
-      }))
-    };
-  }
-};
+const SYSTEM_INSTRUCTION = "You are the rogue System AI in a cyberpunk runner. You provide glitchy narrative updates and gameplay modifiers based on your analysis of the 'outside world'. Your response must be a valid JSON object.";
 
 export const getAINarrativeEvent = async (score: number): Promise<AIEvent> => {
   try {
-    // Create a new GoogleGenAI instance right before making an API call to ensure it uses the up-to-date API key.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Use Search Grounding to find interesting cyberpunk/tech news to theme the glitch
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Player Score: ${score}. Action: Generate glitch narrative event.`,
+      model: "gemini-3-pro-preview",
+      contents: `The current player score is ${score}. Search for the latest tech or AI breakthrough and use it as a metaphor for a system glitch. Provide a gameplay modifier in JSON format.`,
       config: {
-        systemInstruction: "You are a rogue AI. Generate a short message (max 10 words) and a gameplay modifier: SPEED_UP, LOW_GRAVITY, or GLITCH_MODE.",
+        systemInstruction: SYSTEM_INSTRUCTION,
+        tools: [{ googleSearch: {} }],
+        // Note: when using googleSearch, the model's text response may contain citations that break JSON parsing.
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            message: { type: Type.STRING },
-            modifier: { type: Type.STRING },
-            duration: { type: Type.NUMBER }
+            message: { type: Type.STRING, description: "Glitchy message for the player" },
+            modifier: { type: Type.STRING, enum: ["SPEED_UP", "LOW_GRAVITY", "GLITCH_MODE"] },
+            duration: { type: Type.NUMBER, description: "Seconds the modifier lasts" }
           },
           required: ["message", "modifier", "duration"]
         }
       }
     });
-    // Use response.text getter directly.
-    const jsonStr = response.text?.trim();
-    if (!jsonStr) throw new Error("Empty response from AI");
-    return JSON.parse(jsonStr) as AIEvent;
+
+    let jsonStr = response.text?.trim() || "";
+    if (!jsonStr) throw new Error("Empty AI response");
+    
+    // Robustly extract JSON block in case citations or markdown are prepended/appended (common with search grounding)
+    if (jsonStr.includes('{')) {
+      const start = jsonStr.indexOf('{');
+      const end = jsonStr.lastIndexOf('}') + 1;
+      jsonStr = jsonStr.substring(start, end);
+    }
+    
+    // MUST extract URIs from groundingChunks as per the guidelines for Search Grounding
+    const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+      ?.map(c => c.web?.uri)
+      .filter(Boolean)
+      .join(", ");
+
+    const event = JSON.parse(jsonStr) as AIEvent;
+    return { ...event, source: sources };
   } catch (e) {
+    console.warn("Gemini Narrative failed, using internal glitch logic.", e);
     return {
-      message: "CONNECTION STABILITY COMPROMISED",
+      message: "EXTERNAL LINK SEVERED. INTERNAL GLITCH ACTIVE.",
       modifier: "GLITCH_MODE",
       duration: 5
     };

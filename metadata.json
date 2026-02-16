@@ -1,5 +1,7 @@
 {
   "name": "HyperRun: Nexus - High Performance Runner",
-  "description": "A production-ready technical blueprint of a high-performance endless runner featuring MVVM architecture, optimized canvas rendering, Gemini AI narrative integration, and robust accessibility standards.",
-  "requestFramePermissions": []
+  "description": "Production-grade technical engine with object pooling, search-grounded AI narrative, and pure physics logic for high performance and testability.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }

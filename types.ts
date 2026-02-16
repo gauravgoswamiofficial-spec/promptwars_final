@@ -15,6 +15,7 @@ export interface Obstacle {
   z: number;
   type: 'BARRIER' | 'TRAIN' | 'RAMP' | 'POWERUP';
   height: number;
+  active: boolean; // For object pooling
 }
 
 export interface GameStats {
@@ -30,6 +31,7 @@ export interface AIEvent {
   message: string;
   modifier: ModifierType;
   duration: number;
+  source?: string; // For Search grounding attribution
 }
 
 export interface LevelPattern {
@@ -45,3 +47,5 @@ export interface LevelPattern {
 export interface AssetMap {
   [key: string]: HTMLImageElement;
 }
+
+export const LANES = [-150, 0, 150];
